@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Typ0saur</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <!-- jQuery CDN -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'mono': ['JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', 'Source Code Pro', 'Consolas', 'Ubuntu Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .cursor-blink {
+            animation: blink 1s infinite;
+        }
+        
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0.3; }
+        }
+        
+        .text-row {
+            line-height: 1.8;
+            margin-bottom: 0.5rem;
+            display: block;
+            width: 100%;
+            text-overflow: clip; /* Clip overflowing text */
+            white-space: nowrap; /* Prevent wrapping within a row */
+        }
+        
+        .word {
+            display: inline;
+            margin-right: 0.05rem; /* Minimal spacing for maximum space use */
+            font-size: 1.5rem;
+            white-space: nowrap;
+        }
+        
+        .word:after {
+            content: " ";
+        }
+        
+        .current-word {
+            position: relative;
+        }
+        
+        #text-display {
+            outline: none;
+            line-height: 1.8;
+            word-spacing: 0.05rem; /* Minimal word spacing for maximum space efficiency */
+            position: relative;
+            padding: 4px 0px 4px 4px; /* Absolute minimal padding for maximum text space */
+            box-sizing: border-box;
+            max-width: 100%;
+            word-break: break-word; /* Force word breaking if needed */
+        }
+        
+        #text-display::after {
+            content: '';
+            position: absolute;
+            top: 10px;
+            right: 1px; /* Extremely close to edge for maximum text space */
+            bottom: 10px;
+            width: 1px;
+            pointer-events: none;
+        }
+        
+        .completed-word {
+            opacity: 0.8;
+        }
+        
+        .upcoming-word {
+            opacity: 0.6;
+        }
+        
+        .correct-char {
+            color: #10b981;
+        }
+        
+        .current-char {
+            background-color: rgba(59, 130, 246, 0.3);
+            color: white;
+            padding: 0 1px;
+        }
+        
+        .upcoming-char {
+            color: #9ca3af;
+        }
+        
+        /* Results Modal Animations */
+        @keyframes slideInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% {
+                transform: translateY(0);
+            }
+            40% {
+                transform: translateY(-10px);
+            }
+            60% {
+                transform: translateY(-5px);
+            }
+        }
+        
+        .results-modal {
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        .results-content {
+            animation: slideInUp 0.4s ease-out;
+        }
+        
+        .animate-fadeIn {
+            animation: fadeIn 0.8s ease-out;
+        }
+        
+        .animate-bounce {
+            animation: bounce 2s infinite;
+        }
+        
+        .stat-card {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 font-mono min-h-screen flex flex-col">
+    <!-- Header Bar -->
+    <header class="px-6 py-4">
+        <div class="text-xl font-bold text-blue-400">Typ0saur</div>
+    </header>
+
+    <!-- Floating Menu Bar -->
+    <nav class="absolute top-20 left-1/2 transform -translate-x-1/2 z-10">
+        <div class="bg-gray-800/90 backdrop-blur-sm border border-gray-600 rounded-lg px-4 py-2 shadow-lg">
+            <div class="flex items-center justify-between space-x-6 text-sm">
+                <!-- Left Section - Menu -->
+                <div class="flex items-center space-x-4">
+                    <span class="flex items-center space-x-1 text-gray-300 hover:text-white cursor-pointer transition-colors px-2 py-1 rounded" id="profile-menu">
+                        <i data-lucide="user" class="w-3 h-3"></i>
+                        <span class="text-xs">Profile</span>
+                    </span>
+                    <span class="flex items-center space-x-1 text-gray-300 hover:text-white cursor-pointer transition-colors px-2 py-1 rounded" id="leaderboard-menu">
+                        <i data-lucide="trophy" class="w-3 h-3"></i>
+                        <span class="text-xs">Leaderboard</span>
+                    </span>
+                    <span class="flex items-center space-x-1 text-white cursor-pointer transition-colors px-2 py-1 rounded bg-black/20" id="play-menu">
+                        <i data-lucide="rocket" class="w-3 h-3"></i>
+                        <span class="text-xs">Play</span>
+                    </span>
+                </div>
+
+                <div class="w-px h-4 bg-gray-600"></div>
+
+                <!-- Right Section - Game Settings (Blue) -->
+                <div class="flex items-center space-x-4 text-blue-400">
+                    <!-- Language -->
+                    <span class="text-xs hover:text-blue-300 cursor-pointer transition-colors" id="language-selector">Indonesia</span>
+                    
+                    <span class="text-gray-500">-</span>
+                    
+                    <!-- Difficulty -->
+                    <span class="text-xs hover:text-blue-300 cursor-pointer transition-colors" id="difficulty-selector">Medium</span>
+                    
+                    <span class="text-gray-500">-</span>
+                    
+                    <!-- Mode -->
+                    <span class="text-xs hover:text-blue-300 cursor-pointer transition-colors" id="mode-selector">Normal</span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Area -->
+    <main class="flex-1 flex flex-col justify-center items-center px-6 py-12">
+        <div class="max-w-4xl w-full">
+            <!-- Stats Display -->
+            <div class="flex justify-center items-center mb-8" id="stats-display">
+                <!-- Stats will be generated by JavaScript based on mode -->
+            </div>
+            
+            <!-- Text Display -->
+            <div class="text-left leading-relaxed text-2xl tracking-wide font-mono min-h-[200px] py-4" 
+                 id="text-display" 
+                 tabindex="0">
+                <!-- Text will be generated by JavaScript -->
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal Overlays -->
+    <!-- Language Modal -->
+    <div id="language-modal" class="modal-overlay fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden items-center justify-center">
+        <div class="bg-gray-800 border border-gray-600 rounded-lg p-6 w-80 max-w-sm mx-4">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-blue-400">Select Language</h3>
+                <button class="close-modal text-gray-400 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="mb-4">
+                <input 
+                    type="text" 
+                    placeholder="Search languages..." 
+                    class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+            </div>
+            <div class="space-y-2 max-h-64 overflow-y-auto">
+                <div class="px-3 py-2 hover:bg-gray-700 cursor-pointer rounded transition-colors" data-language="english">
+                    English
+                </div>
+                <div class="px-3 py-2 hover:bg-gray-700 cursor-pointer rounded transition-colors text-blue-400" data-language="indonesian">
+                    Indonesia
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Difficulty Modal -->
+    <div id="difficulty-modal" class="modal-overlay fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden items-center justify-center">
+        <div class="bg-gray-800 border border-gray-600 rounded-lg p-6 w-80 max-w-sm mx-4">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-blue-400">Select Difficulty</h3>
+                <button class="close-modal text-gray-400 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="mb-4">
+                <input 
+                    type="text" 
+                    placeholder="Search difficulty..." 
+                    class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+            </div>
+            <div class="space-y-2 max-h-64 overflow-y-auto">
+                <div class="px-3 py-2 hover:bg-gray-700 cursor-pointer rounded transition-colors" data-difficulty="easy">
+                    Easy
+                </div>
+                <div class="px-3 py-2 hover:bg-gray-700 cursor-pointer rounded transition-colors text-blue-400" data-difficulty="medium">
+                    Medium
+                </div>
+                <div class="px-3 py-2 hover:bg-gray-700 cursor-pointer rounded transition-colors" data-difficulty="hard">
+                    Hard
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mode Modal -->
+    <div id="mode-modal" class="modal-overlay fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden items-center justify-center">
+        <div class="bg-gray-800 border border-gray-600 rounded-lg p-6 w-80 max-w-sm mx-4">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-blue-400">Select Mode</h3>
+                <button class="close-modal text-gray-400 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="mb-4">
+                <input 
+                    type="text" 
+                    placeholder="Search mode..." 
+                    class="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+            </div>
+            <div class="space-y-2 max-h-64 overflow-y-auto">
+                <div class="px-3 py-2 hover:bg-gray-700 cursor-pointer rounded transition-colors text-blue-400" data-mode="normal">
+                    Normal
+                </div>
+                <div class="px-3 py-2 hover:bg-gray-700 cursor-pointer rounded transition-colors" data-mode="endless">
+                    Endless
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="px-6 py-3">
+        <div class="text-center text-sm text-gray-400">
+            <span class="inline-flex items-center space-x-4">
+                <span class="inline-flex items-center space-x-1">
+                    <kbd class="px-2 py-1 bg-gray-700 rounded text-xs">esc</kbd>
+                    <span>– restart</span>
+                </span>
+            </span>
+        </div>
+    </footer>
+
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+    </script>
+    <script src="/public/js/script.js"></script>
+</body>
+</html>
