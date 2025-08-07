@@ -51,10 +51,6 @@
             content: " ";
         }
         
-        .current-word {
-            position: relative;
-        }
-        
         #text-display {
             outline: none;
             line-height: 1.8;
@@ -96,6 +92,17 @@
         
         .upcoming-char {
             color: #9ca3af;
+        }
+        
+        .eaten-char {
+            color: #ef4444 !important;
+            background-color: rgba(239, 68, 68, 0.2);
+            transition: color 300ms ease, background-color 300ms ease;
+        }
+        
+        .eaten-char[data-char-key] {
+            display: inline-block;
+            min-width: 1ch;
         }
         
         /* Results Modal Animations */

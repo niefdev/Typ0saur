@@ -8,6 +8,9 @@ $(document).ready(function() {
         console.log('Lucide icons initialized');
     }
     
+    // Load saved configuration from localStorage
+    loadConfiguration();
+    
     // Set up modal functionality
     setupModalHandlers();
     
@@ -80,6 +83,9 @@ function setupModalHandlers() {
         // Close modal
         $('#language-modal').addClass('hidden').removeClass('flex');
         
+        // Save configuration
+        saveConfiguration();
+        
         // Regenerate words with new language
         generateWords();
         
@@ -101,6 +107,12 @@ function setupModalHandlers() {
         // Close modal
         $('#difficulty-modal').addClass('hidden').removeClass('flex');
         
+        // Save configuration
+        saveConfiguration();
+        
+        // Regenerate words with new difficulty (affects word count in normal mode)
+        generateWords();
+        
         console.log('Difficulty changed to:', difficulty);
     });
     
@@ -118,6 +130,9 @@ function setupModalHandlers() {
         
         // Close modal
         $('#mode-modal').addClass('hidden').removeClass('flex');
+        
+        // Save configuration
+        saveConfiguration();
         
         // Regenerate words with new mode
         generateWords();
@@ -164,12 +179,7 @@ function setupModalHandlers() {
         });
     });
     
-    // ESC key to close modals
-    $(document).on('keydown', function(e) {
-        if (e.key === 'Escape') {
-            $('.modal-overlay').addClass('hidden').removeClass('flex');
-        }
-    });
+    // ESC key to close modals - handled in setupInputHandling() to avoid conflicts
 }
 
 // Left menu navigation handlers
@@ -220,6 +230,71 @@ function setupLanguageSelection() {
     console.log('Language selection setup completed');
 }
 
+// Configuration management with localStorage
+function saveConfiguration() {
+    const config = {
+        mode: $('#mode-selector').text().toLowerCase(),
+        difficulty: $('#difficulty-selector').text().toLowerCase(),
+        language: $('#language-selector').text().toLowerCase()
+    };
+    
+    localStorage.setItem('typ0saur-config', JSON.stringify(config));
+    console.log('Configuration saved:', config);
+}
+
+function loadConfiguration() {
+    try {
+        const savedConfig = localStorage.getItem('typ0saur-config');
+        if (savedConfig) {
+            const config = JSON.parse(savedConfig);
+            console.log('Loading saved configuration:', config);
+            
+            // Update selectors with saved configuration
+            if (config.mode) {
+                const modeText = config.mode.charAt(0).toUpperCase() + config.mode.slice(1);
+                $('#mode-selector').text(modeText);
+                // Update the selected state in modal
+                $('[data-mode]').removeClass('text-blue-400');
+                $(`[data-mode="${config.mode}"]`).addClass('text-blue-400');
+            }
+            
+            if (config.difficulty) {
+                const difficultyText = config.difficulty.charAt(0).toUpperCase() + config.difficulty.slice(1);
+                $('#difficulty-selector').text(difficultyText);
+                // Update the selected state in modal
+                $('[data-difficulty]').removeClass('text-blue-400');
+                $(`[data-difficulty="${config.difficulty}"]`).addClass('text-blue-400');
+            }
+            
+            if (config.language) {
+                const languageMap = {
+                    'indonesia': 'Indonesia',
+                    'english': 'English'
+                };
+                const languageText = languageMap[config.language] || 'Indonesia';
+                $('#language-selector').text(languageText);
+                // Update the selected state in modal
+                $('[data-language]').removeClass('text-blue-400');
+                const languageKey = config.language === 'indonesia' ? 'indonesian' : 'english';
+                $(`[data-language="${languageKey}"]`).addClass('text-blue-400');
+            }
+        }
+    } catch (error) {
+        console.error('Error loading configuration:', error);
+    }
+}
+
+// Get word count based on difficulty
+function getWordCountByDifficulty() {
+    const difficulty = getCurrentDifficulty();
+    switch (difficulty) {
+        case 'easy': return 50;
+        case 'medium': return 75;
+        case 'hard': return 100;
+        default: return 75; // default to medium
+    }
+}
+
 function setupInputHandling() {
     console.log('Input handling setup completed');
     
@@ -228,16 +303,46 @@ function setupInputHandling() {
     
     // Handle keyboard input
     $(document).on('keydown', function(e) {
-        // Prevent ESC from affecting text input when not in modal
-        if (e.key === 'Escape' && !$('.modal-overlay').is(':visible')) {
+        console.log('🎯 KEY EVENT:', e.key, 'Target:', e.target.tagName);
+        
+        // Check if we're in a special end-game state using JavaScript variables
+        const isResultsActive = gameState.isResultsActive;
+        const isGameOverActive = gameState.isGameOverActive;
+        
+        console.log('🔍 STATE CHECK - Results:', isResultsActive, 'GameOver:', isGameOverActive);
+        
+        // If in results or game over screen, only handle ESC and block all other keys
+        if (isResultsActive || isGameOverActive) {
+            console.log('🚫 KEY BLOCKED:', e.key, 'isResultsActive:', isResultsActive, 'isGameOverActive:', isGameOverActive);
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                // Clear JavaScript state variables instead of CSS classes
+                gameState.isResultsActive = false;
+                gameState.isGameOverActive = false;
+                // Restart functionality
+                console.log('Restart triggered from end screen');
+                generateWords();
+            }
+            // Block all other keys when in end screens
             e.preventDefault();
-            // Restart functionality
-            console.log('Restart triggered');
-            generateWords();
             return;
         }
         
-        // Only handle typing when game area is focused and no modal is open
+        // Handle ESC key for modals and restart
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            // If modal is open, close it
+            if ($('.modal-overlay').is(':visible')) {
+                $('.modal-overlay').addClass('hidden').removeClass('flex');
+            } else {
+                // Otherwise restart game
+                console.log('Restart triggered');
+                generateWords();
+            }
+            return;
+        }
+        
+        // Only handle typing when game area is focused, no modal is open, and words are loaded
         if (!$('.modal-overlay').is(':visible') && gameState.words.length > 0) {
             // Handle space for word completion
             if (e.key === ' ') {
@@ -335,11 +440,31 @@ let gameState = {
     // For endless mode tracking
     recentWPMData: [], // Store WPM data for last minute
     recentAccuracyData: [], // Store accuracy data for last minute
-    overallStartTime: null
+    overallStartTime: null,
+    // Game state variables for input blocking
+    isResultsActive: false,
+    isGameOverActive: false,
+    // Monster system
+    monster: {
+        isActive: false,
+        currentWordIndex: 0, // Index of word being eaten - start from first word
+        currentCharIndex: 0, // Index of character being eaten - start from first character
+        speed: 200, // milliseconds between each character consumption (will be set based on difficulty)
+        intervalId: null,
+        eatenChars: new Set(), // Track eaten characters: "wordIndex-charIndex"
+        activationTimeoutId: null, // Timeout ID for delayed activation
+        delayStarted: false, // Track if the 10-second delay has been started
+        animatingChars: new Map(), // Track animating characters with their timeouts
+        randomCharPool: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=[]{}|;:,.<>?'
+    }
 };
 
 function generateWords() {
     console.log('Generating words...');
+    
+    // Clear JavaScript state variables instead of CSS classes
+    gameState.isResultsActive = false;
+    gameState.isGameOverActive = false;
     
     // Get current language from selector
     const currentLanguageText = $('#language-selector').text().toLowerCase();
@@ -358,8 +483,9 @@ function generateWords() {
         // For endless mode, use all available words
         gameState.words = shuffledWords;
     } else {
-        // For normal mode, use 200 words
-        gameState.words = shuffledWords.slice(0, 20);
+        // For normal mode, use word count based on difficulty
+        const wordCount = getWordCountByDifficulty();
+        gameState.words = shuffledWords.slice(0, wordCount);
     }
     
     // Reset game state
@@ -376,6 +502,9 @@ function generateWords() {
     gameState.recentAccuracyData = [];
     gameState.overallStartTime = null;
     gameState.visibleStartWordIndex = 0; // Reset scroll position
+    
+    // Reset monster state
+    resetMonster();
     
     // Show stats display and footer again when restarting
     $('#stats-display').show();
@@ -539,27 +668,37 @@ function displayWords() {
                 
                 const isCurrentWord = wordIndex === gameState.currentWordIndex;
                 
-                if (isCurrentWord) {
-                    // Current word with character highlighting
-                    html += '<span class="word current-word">';
-                    for (let charIndex = 0; charIndex < word.length; charIndex++) {
-                        const char = word[charIndex];
-                        if (charIndex < gameState.currentCharIndex) {
-                            html += `<span class="correct-char">${char}</span>`;
-                        } else if (charIndex === gameState.currentCharIndex) {
-                            html += `<span class="current-char cursor-blink">${char}</span>`;
-                        } else {
-                            html += `<span class="upcoming-char">${char}</span>`;
-                        }
+                // Generate word HTML based on character state
+                html += '<span class="word">';
+                for (let charIndex = 0; charIndex < word.length; charIndex++) {
+                    const char = word[charIndex];
+                    const charKey = `${wordIndex}-${charIndex}`;
+                    
+                    // Check if this character is eaten by monster
+                    if (gameState.monster.eatenChars.has(charKey)) {
+                        // Check if character is animating
+                        const animationData = gameState.monster.animatingChars.get(charKey);
+                        const displayChar = animationData ? animationData.currentChar : char;
+                        html += `<span class="eaten-char" data-char-key="${charKey}">${displayChar}</span>`;
                     }
-                    html += '</span>';
-                } else if (wordIndex < gameState.currentWordIndex) {
-                    // Completed words
-                    html += `<span class="word completed-word text-green-400">${word}</span>`;
-                } else {
-                    // Upcoming words
-                    html += `<span class="word upcoming-word text-gray-400">${word}</span>`;
+                    // Check if this is the current typing position
+                    else if (isCurrentWord && charIndex === gameState.currentCharIndex) {
+                        html += `<span class="current-char cursor-blink">${char}</span>`;
+                    }
+                    // Check if this character has been typed correctly
+                    else if (isCurrentWord && charIndex < gameState.currentCharIndex) {
+                        html += `<span class="correct-char">${char}</span>`;
+                    }
+                    // Check if this word is completed
+                    else if (wordIndex < gameState.currentWordIndex) {
+                        html += `<span class="correct-char">${char}</span>`;
+                    }
+                    // Regular upcoming character
+                    else {
+                        html += `<span class="upcoming-char">${char}</span>`;
+                    }
                 }
+                html += '</span>';
             }
         }
         
@@ -719,6 +858,9 @@ function handleKeyInput(char) {
         if (!gameState.overallStartTime) {
             gameState.overallStartTime = Date.now();
         }
+        
+        // Activate monster when game starts
+        checkMonsterActivation();
     }
     
     const currentWord = gameState.words[gameState.currentWordIndex];
@@ -765,6 +907,9 @@ function handleKeyInput(char) {
             
             // Check if we need to scroll (keep cursor in row 2)
             checkScroll();
+            
+            // Check if we should activate monster
+            checkMonsterActivation();
         }
     } else {
         // Wrong character - track for stats but don't progress
@@ -778,9 +923,12 @@ function handleKeyInput(char) {
         }
     }
     
-    gameState.totalChars++;
-    updateStatsDisplay();
-    displayWords();
+    // Only update display if game is still active
+    if (gameState.isGameActive) {
+        gameState.totalChars++;
+        updateStatsDisplay();
+        displayWords();
+    }
 }
 
 function addMoreWordsEndless() {
@@ -799,6 +947,9 @@ function checkScroll() {
 }
 
 function showGameResults() {
+    // Stop monster when game completes
+    stopMonster();
+    
     // Calculate final stats
     const timeElapsed = (Date.now() - gameState.startTime) / 1000; // in seconds
     const finalWPM = Math.round((gameState.totalCorrectChars / 5) / (timeElapsed / 60));
@@ -820,7 +971,7 @@ function showGameResults() {
                     <div class="w-16 h-16 bg-blue-400 rounded-full mx-auto mb-4 flex items-center justify-center">
                         <i data-lucide="trophy" class="w-8 h-8 text-gray-900"></i>
                     </div>
-                    <h2 class="text-3xl font-bold text-blue-400 mb-2">Test Completed!</h2>
+                    <h2 class="text-3xl font-bold text-blue-400 mb-2">Completed!</h2>
                     <p class="text-gray-300">${getPerformanceMessage(finalWPM, finalAccuracy)}</p>
                 </div>
                 
@@ -871,19 +1022,16 @@ function showGameResults() {
     // Replace the text display content with results
     $('#text-display').html(resultsHtml);
     
+    // Set JavaScript state variable instead of CSS class
+    gameState.isResultsActive = true;
+    
     // Initialize Lucide icons for the new elements
     if (typeof lucide !== 'undefined') {
         lucide.createIcons();
     }
     
-    // Allow manual restart with ESC key only (no auto-restart)
-    $(document).on('keydown.results', function(e) {
-        if (e.key === 'Escape') {
-            $(document).off('keydown.results');
-            $('#stats-display').show(); // Show stats display again
-            generateWords(); // Manual restart
-        }
-    });
+    // Remove any existing result handlers to prevent conflicts
+    $(document).off('keydown.results');
 }
 
 function getPerformanceMessage(wpm, accuracy) {
@@ -925,5 +1073,385 @@ function getPerformanceColor(wpm, accuracy) {
         return "text-purple-400"; // Purple
     } else {
         return "text-gray-400"; // Gray
+    }
+}
+
+// ===== MONSTER SYSTEM =====
+
+// Get current difficulty setting
+function getCurrentDifficulty() {
+    const difficultyText = $('#difficulty-selector').text().toLowerCase();
+    if (difficultyText.includes('easy')) return 'easy';
+    if (difficultyText.includes('medium')) return 'medium';
+    if (difficultyText.includes('hard')) return 'hard';
+    return 'medium'; // default
+}
+
+// Get monster speed based on difficulty
+function getMonsterSpeed(difficulty) {
+    switch (difficulty) {
+        case 'easy': return 300;
+        case 'medium': return 200;
+        case 'hard': return 100;
+        default: return 200;
+    }
+}
+
+// Get random character from pool
+function getRandomChar() {
+    const pool = gameState.monster.randomCharPool;
+    return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// Start character animation for eaten character
+function startCharacterAnimation(charKey, originalChar) {
+    if (gameState.monster.animatingChars.has(charKey)) {
+        return; // Already animating
+    }
+    
+    const animationData = {
+        originalChar: originalChar,
+        currentChar: originalChar,
+        isTransitioning: true,
+        timeouts: []
+    };
+    
+    gameState.monster.animatingChars.set(charKey, animationData);
+    
+    // Phase 1: 300ms transition to red with random character changes
+    let changeCount = 0;
+    const maxChanges = 8; // Number of character changes during 300ms
+    const changeInterval = 300 / maxChanges; // ~37.5ms per change
+    
+    const changeCharacter = () => {
+        if (changeCount < maxChanges) {
+            animationData.currentChar = getRandomChar();
+            updateCharacterDisplay(charKey, animationData.currentChar, true);
+            
+            changeCount++;
+            const timeoutId = setTimeout(changeCharacter, changeInterval);
+            animationData.timeouts.push(timeoutId);
+        } else {
+            // Phase 1 complete - now red and stable
+            animationData.isTransitioning = false;
+            animationData.currentChar = getRandomChar();
+            updateCharacterDisplay(charKey, animationData.currentChar, false);
+            
+            // Phase 2: Random pause between 500ms-3000ms, then continue random changes
+            const pauseDuration = 500 + Math.random() * 2500; // 500ms to 3000ms
+            const pauseTimeoutId = setTimeout(() => {
+                startRandomChangeCycle(charKey);
+            }, pauseDuration);
+            animationData.timeouts.push(pauseTimeoutId);
+        }
+    };
+    
+    changeCharacter();
+}
+
+// Continue random character changes after pause
+function startRandomChangeCycle(charKey) {
+    const animationData = gameState.monster.animatingChars.get(charKey);
+    if (!animationData) return;
+    
+    const changeCharacter = () => {
+        if (gameState.monster.animatingChars.has(charKey)) {
+            animationData.currentChar = getRandomChar();
+            updateCharacterDisplay(charKey, animationData.currentChar, false);
+            
+            // Random pause between changes (500ms-3000ms)
+            const pauseDuration = 500 + Math.random() * 2500;
+            const timeoutId = setTimeout(changeCharacter, pauseDuration);
+            animationData.timeouts.push(timeoutId);
+        }
+    };
+    
+    changeCharacter();
+}
+
+// Update character display in DOM
+function updateCharacterDisplay(charKey, newChar, isTransitioning) {
+    const selector = `[data-char-key="${charKey}"]`;
+    const charElement = document.querySelector(selector);
+    
+    if (charElement) {
+        charElement.textContent = newChar;
+        if (isTransitioning) {
+            charElement.style.transition = 'color 300ms ease, background-color 300ms ease';
+        }
+    }
+}
+
+// Stop character animation
+function stopCharacterAnimation(charKey) {
+    const animationData = gameState.monster.animatingChars.get(charKey);
+    if (animationData) {
+        // Clear all timeouts
+        animationData.timeouts.forEach(timeoutId => clearTimeout(timeoutId));
+        gameState.monster.animatingChars.delete(charKey);
+    }
+}
+
+// Reset monster to initial state
+function resetMonster() {
+    if (gameState.monster.intervalId) {
+        clearInterval(gameState.monster.intervalId);
+    }
+    
+    if (gameState.monster.activationTimeoutId) {
+        clearTimeout(gameState.monster.activationTimeoutId);
+    }
+    
+    // Clear all character animations
+    gameState.monster.animatingChars.forEach((animationData, charKey) => {
+        stopCharacterAnimation(charKey);
+    });
+    
+    gameState.monster = {
+        isActive: false,
+        currentWordIndex: 0, // Start from first word
+        currentCharIndex: 0, // Start from first character
+        speed: 200, // milliseconds between each character consumption (will be set based on difficulty)
+        intervalId: null,
+        eatenChars: new Set(),
+        activationTimeoutId: null,
+        delayStarted: false,
+        animatingChars: new Map(),
+        randomCharPool: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=[]{}|;:,.<>?'
+    };
+    
+    // Remove eaten styling from all characters
+    const textContainer = document.getElementById('textContainer');
+    if (textContainer) {
+        const allChars = textContainer.querySelectorAll('.eaten-char');
+        allChars.forEach(char => {
+            char.classList.remove('eaten-char');
+        });
+    }
+    
+    console.log('Monster reset');
+}
+
+// Activate monster immediately when called (after 10-second delay)
+function activateMonster() {
+    if (gameState.monster.isActive) {
+        return;
+    }
+    
+    console.log('🦖 Typ0saur activated! The 10-second grace period is over. Starting to chase from the beginning...');
+    gameState.monster.isActive = true;
+    
+    // Set monster speed based on current difficulty
+    const difficulty = getCurrentDifficulty();
+    gameState.monster.speed = getMonsterSpeed(difficulty);
+    console.log(`🦖 Monster speed set to ${gameState.monster.speed}ms for ${difficulty} difficulty`);
+    
+    // Start monster from the first word, first character
+    gameState.monster.currentWordIndex = 0;
+    gameState.monster.currentCharIndex = 0;
+    
+    // Start the monster eating loop
+    startMonsterEating();
+}
+
+// Start the monster eating process
+function startMonsterEating() {
+    if (gameState.monster.intervalId) {
+        clearInterval(gameState.monster.intervalId);
+    }
+    
+    gameState.monster.intervalId = setInterval(() => {
+        eatNextCharacter();
+    }, gameState.monster.speed);
+}
+
+// Monster eats the next character
+function eatNextCharacter() {
+    if (!gameState.monster.isActive) {
+        return;
+    }
+    
+    // Check if we've reached the player
+    if (gameState.monster.currentWordIndex >= gameState.currentWordIndex) {
+        if (gameState.monster.currentWordIndex === gameState.currentWordIndex) {
+            // Same word, check character position
+            if (gameState.monster.currentCharIndex >= gameState.currentCharIndex) {
+                // Monster caught the player!
+                gameOver();
+                return;
+            }
+        } else {
+            // Monster is ahead of or at the player's word - caught!
+            gameOver();
+            return;
+        }
+    }
+    
+    // Eat current character
+    const charKey = `${gameState.monster.currentWordIndex}-${gameState.monster.currentCharIndex}`;
+    const originalChar = gameState.words[gameState.monster.currentWordIndex][gameState.monster.currentCharIndex];
+    
+    gameState.monster.eatenChars.add(charKey);
+    
+    // Start character animation
+    startCharacterAnimation(charKey, originalChar);
+    
+    console.log(`🦖 Typ0saur ate character ${gameState.monster.currentCharIndex} of word ${gameState.monster.currentWordIndex}: "${originalChar}"`);
+    
+    // Move to next character
+    moveMonsterToNextCharacter();
+    
+    // Update display only if game is still active
+    if (gameState.isGameActive) {
+        displayWords();
+    }
+}
+
+// Move monster to the next character to eat (moving forward)
+function moveMonsterToNextCharacter() {
+    const currentWord = gameState.words[gameState.monster.currentWordIndex];
+    
+    if (gameState.monster.currentCharIndex < currentWord.length - 1) {
+        // Move to next character in same word
+        gameState.monster.currentCharIndex++;
+    } else {
+        // Move to next word
+        gameState.monster.currentWordIndex++;
+        
+        if (gameState.monster.currentWordIndex < gameState.words.length) {
+            // Set to first character of next word
+            gameState.monster.currentCharIndex = 0;
+        } else {
+            // No more words to eat, stop monster
+            stopMonster();
+        }
+    }
+}
+
+// Stop monster
+function stopMonster() {
+    if (gameState.monster.intervalId) {
+        clearInterval(gameState.monster.intervalId);
+        gameState.monster.intervalId = null;
+    }
+    
+    if (gameState.monster.activationTimeoutId) {
+        clearTimeout(gameState.monster.activationTimeoutId);
+        gameState.monster.activationTimeoutId = null;
+    }
+    
+    // Clear all character animations
+    gameState.monster.animatingChars.forEach((animationData, charKey) => {
+        stopCharacterAnimation(charKey);
+    });
+    
+    gameState.monster.isActive = false;
+    gameState.monster.delayStarted = false;
+    console.log('🦖 Monster stopped');
+}
+
+// Game over when monster catches player
+function gameOver() {
+    console.log('💀 GAME OVER! Monster caught you!');
+    stopMonster();
+    gameState.isGameActive = false;
+    
+    // Hide stats and footer
+    $('#stats-display').hide();
+    $('footer').hide();
+    
+    // Calculate stats for endless mode
+    let statsHtml = '';
+    if (gameState.mode === 'endless') {
+        const timeElapsed = (Date.now() - gameState.startTime) / 1000; // in seconds
+        const finalWPM = Math.round((gameState.totalCorrectChars / 5) / (timeElapsed / 60));
+        const finalAccuracy = Math.round((gameState.totalCorrectChars / gameState.totalChars) * 100) || 0;
+        const wordsCompleted = gameState.completedWords;
+        const timeInMinutes = Math.floor(timeElapsed / 60);
+        const timeInSeconds = Math.round(timeElapsed % 60);
+        
+        statsHtml = `
+            <!-- Stats Grid for endless mode -->
+            <div class="grid grid-cols-2 gap-4 mb-6 max-w-md mx-auto">
+                <!-- WPM -->
+                <div class="bg-gray-800/50 border border-gray-600 rounded-lg p-4 text-center">
+                    <div class="text-2xl font-bold text-blue-400 mb-1">${finalWPM}</div>
+                    <div class="text-xs text-gray-400 uppercase tracking-wide">WPM</div>
+                </div>
+                
+                <!-- Accuracy -->
+                <div class="bg-gray-800/50 border border-gray-600 rounded-lg p-4 text-center">
+                    <div class="text-2xl font-bold text-green-400 mb-1">${finalAccuracy}%</div>
+                    <div class="text-xs text-gray-400 uppercase tracking-wide">Accuracy</div>
+                </div>
+                
+                <!-- Words -->
+                <div class="bg-gray-800/50 border border-gray-600 rounded-lg p-4 text-center">
+                    <div class="text-2xl font-bold text-white mb-1">${wordsCompleted}</div>
+                    <div class="text-xs text-gray-400 uppercase tracking-wide">Words</div>
+                </div>
+                
+                <!-- Time -->
+                <div class="bg-gray-800/50 border border-gray-600 rounded-lg p-4 text-center">
+                    <div class="text-2xl font-bold text-gray-300 mb-1">${timeInMinutes}:${timeInSeconds.toString().padStart(2, '0')}</div>
+                    <div class="text-xs text-gray-400 uppercase tracking-wide">Time</div>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Show game over screen
+    const gameOverHtml = `
+        <div class="flex items-center justify-center min-h-[200px] w-full">
+            <div class="text-center max-w-2xl w-full px-8">
+                <div class="mb-8 animate-fadeIn">
+                    <div class="w-16 h-16 bg-red-500 rounded-full mx-auto mb-4 flex items-center justify-center">
+                        <span class="text-2xl">🦖</span>
+                    </div>
+                    <h2 class="text-3xl font-bold text-red-400 mb-2">Monster Caught You!</h2>
+                    <p class="text-gray-300">The Typ0saur was too fast! Try to type faster next time.</p>
+                </div>
+                
+                ${statsHtml}
+                
+                <div class="mb-6">
+                    <div class="inline-block px-4 py-2 bg-gray-800 border border-gray-600 rounded-lg">
+                        <span class="text-sm font-semibold text-red-400">
+                            EATEN BY TYP0SAUR
+                        </span>
+                    </div>
+                </div>
+                
+                <div class="text-gray-400 text-sm">
+                    <p>Press <kbd class="px-2 py-1 bg-gray-700 border border-gray-600 rounded text-xs">ESC</kbd> to restart</p>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    $('#text-display').html(gameOverHtml);
+    
+    // Set JavaScript state variable instead of CSS class
+    gameState.isGameOverActive = true;
+    console.log('🦖 Game over state activated, gameState.isGameOverActive:', gameState.isGameOverActive);
+    
+    // Remove any existing game over handlers to prevent conflicts
+    $(document).off('keydown.gameover');
+}
+
+// Check if we should activate monster (call this when game starts)
+function checkMonsterActivation() {
+    // Only start the 10-second delay if game is active and delay hasn't been started yet
+    if (gameState.isGameActive && !gameState.monster.delayStarted && !gameState.monster.isActive) {
+        gameState.monster.delayStarted = true;
+        
+        console.log('🦖 Typ0saur will activate in 10 seconds...');
+        
+        // Set timeout to activate monster after 10 seconds
+        gameState.monster.activationTimeoutId = setTimeout(() => {
+            if (gameState.isGameActive) { // Check if game is still active
+                activateMonster();
+            }
+        }, 10000); // 10 seconds delay
     }
 }
